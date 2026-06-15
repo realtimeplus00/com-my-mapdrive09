@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Street Drive — 카카오 로드뷰</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --accent: #FFCD00; --accent-dim: rgba(255,205,0,0.12);
+      --danger: #ff4d6d; --panel-bg: rgba(10,12,18,0.90);
+      --panel-border: rgba(255,255,255,0.08); --text-primary: #f0f4ff;
+      --text-muted: #7a8299; --input-bg: rgba(255,255,255,0.06);
+      --input-border: rgba(255,255,255,0.14); --radius: 14px;
+      --font: 'Noto Sans KR', system-ui, sans-serif; --ad-h: 60px;
+    }
+    html, body { height:100%; font-family:var(--font); background:#0a0c12; overflow:hidden; }
+
+    /* API 키 입력 화면 */
+    #api-screen {
+      position:fixed; inset:0; background:#0a0c12;
+      display:flex; align-items:center; justify-content:center; z-index:9999; padding:24px;
+    }
+    #api-screen.hidden { display:none; }
+    .api-card {
+      width:100%; max-width:420px; background:rgba(255,255,255,0.04);
+      border:1px solid var(--panel-border); border-radius:20px;
+      padding:32px 28px 28px; box-shadow:0 20px 60px rgba(0,0,0,.6);
+    }
+    .api-logo {
+      width:56px; height:56px; background:var(--accent); border-radius:18px;
+      display:flex; align-items:center; justify-content:center; font-size:28px; margin:0 auto 20px;
+    }
+    .api-card h1 { text-align:center; font-size:20px; font-weight:700; color:var(--text-primary); margin-bottom:6px; }
+    .api-sub { text-align:center; font-size:12px; color:var(--text-muted); line-height:1.7; margin-bottom:22px; }
+    .api-field { margin-bottom:12px; }
+    .api-field label { display:block; font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:5px; }
+    .api-field input {
+      width:100%; background:var(--input-bg); border:1px solid var(--input-border);
+      border-radius:10px; padding:11px 14px; color:var(--text-primary);
+      font-size:13px; font-family:monospace; outline:none; transition:border-color .2s, background .2s;
+    }
+    .api-field input:focus { border-color:var(--accent); background:var(--accent-dim); }
+    .api-field input::placeholder { color:var(--text-muted); font-family:var(--font); font-size:12px; }
+    .api-field .hint { font-size:10px; color:var(--text-muted); margin-top:4px; }
+    .api-field .hint b { color:var(--text-primary); }
+    #btn-load-api {
+      width:100%; padding:14px; background:var(--accent); color:#111;
+      border:none; border-radius:11px; font-size:14px; font-weight:700;
+      font-family:var(--font); cursor:pointer; margin-top:8px;
+      transition:opacity .15s, transform .12s;
+    }
+    #btn-load-api:active { transform:scale(.97); }
+    #btn-load-api:disabled { opacity:.4; cursor:not-allowed; }
+    #api-error { margin-top:10px; font-size:12px; color:var(--danger); text-align:center; min-height:18px; }
+
+    /* 메인 앱 */
+    #app { display:flex; flex-direction:column; height:100%; }
+    #app.hidden { display:none; }
+    #roadview-wrap { flex:1; position:relative; min-height:0; background:#111; }
+    #roadview { width:100%; height:100%; }
+
+    #empty-state {
+      position:absolute; inset:0; display:flex; flex-direction:column;
+      align-items:center; justify-content:center; gap:14px;
+      background:#0a0c12; z-index:10; transition:opacity .4s;
+    }
+    #empty-state.hidden { opacity:0; pointer-events:none; }
+    #empty-state .icon { font-size:64px; filter:drop-shadow(0 0 24px var(--accent)); }
+    #empty-state p { color:var(--text-muted); font-size:14px; text-align:center; padding:0 24px; }
+
+    #panel {
+      position:absolute; top:16px; left:16px; width:310px;
+      background:var(--panel-bg); border:1px solid var(--panel-border);
+      border-radius:var(--radius); padding:14px 14px 12px;
+      backdrop-filter:blur(18px) saturate(1.4);
+      -webkit-backdrop-filter:blur(18px) saturate(1.4);
+      box-shadow:0 8px 40px rgba(0,0,0,.55); z-index:100;
+    }
+    .panel-header { display:flex; align-items:center; gap:8px; margin-bottom:11px; }
+    .panel-logo { width:26px; height:26px; background:var(--accent); border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
+    .panel-title { font-size:13px; font-weight:700; color:var(--text-primary); }
+    .panel-sub { font-size:10px; color:var(--text-muted); }
+    #btn-change-key {
+      margin-left:auto; background:none; border:1px solid var(--panel-border);
+      border-radius:7px; padding:3px 7px; font-size:10px; color:var(--text-muted);
+      cursor:pointer; font-family:var(--font); white-space:nowrap;
+    }
+
+    .field { margin-bottom:7px; position:relative; }
+    .field label { display:block; font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:3px; }
+    .field input {
+      width:100%; background:var(--input-bg); border:1px solid var(--input-border);
+      border-radius:8px; padding:7px 10px 7px 30px; color:var(--text-primary);
+      font-size:13px; font-family:var(--font); outline:none; transition:border-color .2s;
+    }
+    .field input:focus { border-color:var(--accent); }
+    .field input::placeholder { color:var(--text-muted); font-size:12px; }
+    .field-icon { position:absolute; left:9px; bottom:8px; font-size:11px; pointer-events:none; }
+    .route-connector { width:1px; height:7px; background:var(--panel-border); margin:0 0 1px 15px; }
+
+    .btn-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; margin-top:10px; }
+    .btn { border:none; border-radius:8px; padding:8px 4px; font-size:12px; font-weight:600; font-family:var(--font); cursor:pointer; transition:opacity .15s, transform .12s; display:flex; align-items:center; justify-content:center; gap:3px; }
+    .btn:active { transform:scale(.95); }
+    .btn:disabled { opacity:.35; cursor:not-allowed; transform:none; }
+    .btn-start { background:var(--accent); color:#111; }
+    .btn-pause { background:rgba(255,200,50,.15); border:1px solid rgba(255,200,50,.3); color:#ffc832; }
+    .btn-stop  { background:rgba(255,77,109,.12); border:1px solid rgba(255,77,109,.3); color:var(--danger); }
+
+    #status-bar { margin-top:9px; padding:6px 9px; background:var(--input-bg); border-radius:8px; display:flex; align-items:center; gap:7px; }
+    .status-dot { width:7px; height:7px; border-radius:50%; background:var(--text-muted); flex-shrink:0; transition:background .3s; }
+    .status-dot.active { background:var(--accent); box-shadow:0 0 8px var(--accent); animation:pulse 1.4s infinite; }
+    .status-dot.paused { background:#ffc832; }
+    @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.35} }
+    #status-text { font-size:11px; color:var(--text-muted); flex:1; }
+    #progress-wrap { font-size:10px; color:var(--accent); font-weight:700; min-width:34px; text-align:right; }
+
+    .speed-row { display:flex; align-items:center; gap:7px; margin-top:8px; }
+    .speed-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; white-space:nowrap; }
+    #speed-slider { flex:1; accent-color:var(--accent); cursor:pointer; }
+    #speed-val { font-size:11px; color:var(--accent); font-weight:700; min-width:24px; text-align:right; }
+
+    /* 진행 슬라이더 */
+    .progress-row { margin-top:8px; }
+    .progress-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+    .progress-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; }
+    #progress-pct { font-size:11px; color:#4dd9ac; font-weight:700; }
+    .progress-track {
+      position:relative; height:20px; display:flex; align-items:center;
+    }
+    /* 배경 트랙 */
+    .progress-track-bg {
+      position:absolute; left:0; right:0; height:6px;
+      background:rgba(77,217,172,.15); border-radius:3px;
+      border:1px solid rgba(77,217,172,.25);
+    }
+    /* 채워지는 바 */
+    #progress-fill {
+      position:absolute; left:0; height:6px;
+      background:linear-gradient(90deg,#1a7a5e,#4dd9ac);
+      border-radius:3px; width:0%; pointer-events:none;
+      transition:width .25s linear;
+    }
+    /* 차 아이콘 */
+    #progress-car {
+      position:absolute; font-size:16px; transform:translateX(-50%);
+      left:0%; pointer-events:none; transition:left .25s linear;
+      filter:drop-shadow(0 0 4px rgba(77,217,172,.8));
+      line-height:1; margin-top:-1px;
+    }
+    /* 실제 range input — 완전히 투명하게 위에 겹침 */
+    #progress-slider {
+      position:absolute; left:0; right:0; width:100%;
+      opacity:0; cursor:pointer; height:20px; margin:0;
+      -webkit-appearance:none; appearance:none;
+    }
+
+    #ad-banner { height:var(--ad-h); background:rgba(10,12,18,.9); border-top:1px solid var(--panel-border); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    #ad-banner span { font-size:11px; color:var(--text-muted); }
+
+    #toast { position:absolute; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.75); border:1px solid rgba(255,255,255,.12); color:var(--text-primary); font-size:12px; padding:9px 18px; border-radius:30px; pointer-events:none; opacity:0; transition:opacity .3s; white-space:nowrap; z-index:200; max-width:calc(100vw - 40px); text-align:center; }
+    #toast.show { opacity:1; }
+    #no-roadview { position:absolute; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(10,12,18,.85); border:1px solid var(--panel-border); color:var(--text-muted); font-size:11px; padding:6px 14px; border-radius:20px; opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap; z-index:150; }
+    #no-roadview.show { opacity:1; }
+
+    @media (max-width:480px) { #panel { width:calc(100vw - 32px); } }
+
+    /* 패널 숨김 토글 */
+    #panel { transition: all 0.3s ease; }
+    #panel-body { overflow:hidden; transition: max-height 0.3s ease, opacity 0.3s ease; max-height:400px; opacity:1; }
+    #panel.collapsed #panel-body { max-height:0; opacity:0; pointer-events:none; }
+    #panel.collapsed { padding-bottom:10px; }
+
+    /* 진행 슬라이더 — 숨김 상태에서도 항상 표시 */
+    #progress-row-always {
+      border-top:1px solid var(--panel-border);
+      margin-top:8px; padding-top:8px;
+    }
+    #panel.collapsed #progress-row-always {
+      margin-top:0; padding-top:8px;
+      border-top: 1px solid var(--panel-border);
+    }
+
+    /* 숨김 버튼 — 패널 헤더 오른쪽 끝 */
+    #btn-toggle-panel {
+      margin-left:6px; background:none; border:1px solid var(--panel-border);
+      border-radius:7px; padding:3px 7px; font-size:11px; color:var(--text-muted);
+      cursor:pointer; font-family:var(--font); white-space:nowrap; transition:color .2s;
+      line-height:1.4;
+    }
+    #btn-toggle-panel:hover { color:var(--text-primary); }
+  </style>
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Street Drive — 카카오 로드뷰">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#7c3aed">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <script>
+    if('serviceWorker' in navigator){
+      window.addEventListener('load',()=>{
+        navigator.serviceWorker.register('./service-worker.js');
+      });
+    }
+    window.addEventListener('beforeinstallprompt',e=>{
+      e.preventDefault();
+      window._pwaE=e;
+      var b=document.createElement('div');
+      b.style='position:fixed;bottom:0;left:0;right:0;background:#7c3aed;color:#fff;padding:18px;text-align:center;z-index:9999;font-size:15px;font-weight:bold;cursor:pointer;font-family:sans-serif;';
+      b.innerHTML='📲 홈화면에 앱 추가하기 · Add to Home Screen';
+      b.onclick=async function(){window._pwaE.prompt();var r=await window._pwaE.userChoice;if(r.outcome==='accepted')b.remove();};
+      document.body.appendChild(b);
+    });
+  </script>
+</head>
+<body>
+
+<!-- ① API 키 입력 화면 -->
+<div id="api-screen">
+  <div class="api-card">
+    <div class="api-logo">🗺</div>
+    <h1>Street Drive</h1>
+    <p class="api-sub">카카오맵 기반 국내 모의 주행<br>두 가지 키를 입력하면 실제 도로 경로로 주행합니다.</p>
+
+    <div class="api-field">
+      <label>JavaScript 앱 키 <span style="color:var(--accent)">*필수</span></label>
+      <input id="input-js-key" type="text" placeholder="앱 키 → JavaScript 키 (32자리)" autocomplete="off" spellcheck="false" />
+      <div class="hint">지도·로드뷰 표시에 사용</div>
+    </div>
+
+    <div class="api-field">
+      <label>REST API 키 <span style="color:var(--accent)">*자동차 경로 필수</span></label>
+      <input id="input-rest-key" type="text" placeholder="앱 키 → REST API 키 (32자리)" autocomplete="off" spellcheck="false" />
+      <div class="hint">카카오 자동차 길찾기 경로에 사용 (없으면 직선 경로로 대체)</div>
+    </div>
+
+    <button id="btn-load-api">카카오맵 불러오기 →</button>
+    <div id="api-error"></div>
+  </div>
+</div>
+
+<!-- ② 메인 앱 -->
+<div id="app" class="hidden">
+  <div id="roadview-wrap">
+    <div id="roadview"></div>
+    <div id="empty-state">
+      <div class="icon">🚗</div>
+      <p>출발지와 목적지를 입력하고<br>주행을 시작하세요</p>
+    </div>
+    <div id="panel">
+      <div class="panel-header">
+        <div class="panel-logo">🗺</div>
+        <div>
+          <div class="panel-title">Street Drive</div>
+          <div class="panel-sub">카카오 로드뷰 모의 주행</div>
+        </div>
+        <button id="btn-change-key">🔑 키 변경</button>
+        <button id="btn-toggle-panel">▲ 숨기기</button>
+      </div>
+      <div id="panel-body">
+        <div class="field">
+          <label>출발지</label>
+          <span class="field-icon">🟢</span>
+          <input id="origin" type="text" placeholder="예: 서울역" />
+        </div>
+        <div class="route-connector"></div>
+        <div class="field">
+          <label>목적지</label>
+          <span class="field-icon">🔴</span>
+          <input id="destination" type="text" placeholder="예: 강남역" />
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-start" id="btn-start">▶ 시작</button>
+          <button class="btn btn-pause" id="btn-pause" disabled>⏸ 일시정지</button>
+          <button class="btn btn-stop"  id="btn-stop"  disabled>⏹ 정지</button>
+        </div>
+        <div class="speed-row">
+          <span class="speed-label">속도</span>
+          <input id="speed-slider" type="range" min="1" max="10" value="4" />
+          <span id="speed-val">4</span>
+        </div>
+        <div id="status-bar">
+          <div class="status-dot" id="status-dot"></div>
+          <span id="status-text">대기 중</span>
+          <span id="progress-wrap"></span>
+        </div>
+      </div>
+      <!-- 숨김 상태에서도 항상 표시되는 진행 슬라이더 -->
+      <div class="progress-row" id="progress-row-always">
+        <div class="progress-header">
+          <span class="progress-label">진행</span>
+          <span id="progress-pct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-track-bg"></div>
+          <div id="progress-fill"></div>
+          <div id="progress-car">🚗</div>
+          <input id="progress-slider" type="range" min="0" max="100" value="0" step="1" />
+        </div>
+      </div>
+    </div>
+    <div id="no-roadview">📷 로드뷰 미지원 구간</div>
+    <div id="toast"></div>
+  </div>
+  <div id="ad-banner"><span>AD BANNER — AdMob 광고 영역</span></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var State = {
+    roadview: null, rvClient: null,
+    drivePath: [], stepIndex: 0,
+    timer: null, running: false, paused: false,
+    intervalMs: 700,
+    _pendingHeading: null,
+    _overlayTimer: null,
+    _imageReady: false,
+  };
+
+  var UI = {
+    apiScreen:      document.getElementById('api-screen'),
+    appDiv:         document.getElementById('app'),
+    inputJsKey:     document.getElementById('input-js-key'),
+    btnLoadApi:     document.getElementById('btn-load-api'),
+    apiError:       document.getElementById('api-error'),
+    btnChangeKey:   document.getElementById('btn-change-key'),
+    btnTogglePanel: document.getElementById('btn-toggle-panel'),
+    panel:          document.getElementById('panel'),
+    originInput:    document.getElementById('origin'),
+    destInput:      document.getElementById('destination'),
+    btnStart:       document.getElementById('btn-start'),
+    btnPause:       document.getElementById('btn-pause'),
+    btnStop:        document.getElementById('btn-stop'),
+    statusDot:      document.getElementById('status-dot'),
+    statusText:     document.getElementById('status-text'),
+    progressWrap:   document.getElementById('progress-wrap'),
+    emptyState:     document.getElementById('empty-state'),
+    toast:          document.getElementById('toast'),
+    speedSlider:    document.getElementById('speed-slider'),
+    speedVal:       document.getElementById('speed-val'),
+    noRoadview:     document.getElementById('no-roadview'),
+    inputRestKey:   document.getElementById('input-rest-key'),
+    progressSlider: document.getElementById('progress-slider'),
+    progressFill:   document.getElementById('progress-fill'),
+    progressCar:    document.getElementById('progress-car'),
+    progressPct:    document.getElementById('progress-pct'),
+  };
+
+  // 저장된 키 복원
+  UI.inputJsKey.value   = localStorage.getItem('kakao_js_key')   || '';
+  UI.inputRestKey.value = localStorage.getItem('kakao_rest_key') || '';
+
+  // 저장된 JS 키가 있으면 키 입력 화면 건너뛰고 자동 시작
+  if (UI.inputJsKey.value) {
+    doLoadSDK();
+  }
+
+  UI.btnLoadApi.addEventListener('click', doLoadSDK);
+  UI.inputJsKey.addEventListener('keydown', function(e){ if(e.key==='Enter') doLoadSDK(); });
+  UI.btnChangeKey.addEventListener('click', function(){
+    clearDrive();
+    UI.appDiv.classList.add('hidden');
+    UI.apiScreen.classList.remove('hidden');
+    UI.apiError.textContent = '';
+  });
+
+  /* ══════════════════════════════════
+     SDK 로드
+  ══════════════════════════════════ */
+  function doLoadSDK() {
+    var jsKey  = UI.inputJsKey.value.trim();
+    var restKey = UI.inputRestKey.value.trim();
+    if (!jsKey) { UI.apiError.textContent = 'JavaScript 앱 키를 입력해 주세요.'; return; }
+
+    UI.apiError.textContent = '';
+    UI.btnLoadApi.disabled = true;
+    UI.btnLoadApi.textContent = '불러오는 중…';
+
+    localStorage.setItem('kakao_js_key', jsKey);
+    if (restKey) localStorage.setItem('kakao_rest_key', restKey);
+
+    // 이미 로드된 SDK 재사용
+    if (window.kakao && window.kakao.maps && window.kakao.maps.Roadview) {
+      initApp();
+      return;
+    }
+
+    // 기존에 로드 시도한 script 태그 제거 (키 변경 후 재시도 시)
+    var old = document.getElementById('kakao-sdk-script');
+    if (old) old.parentNode.removeChild(old);
+
+    var script = document.createElement('script');
+    script.id  = 'kakao-sdk-script';
+    script.src = 'https://dapi.kakao.com/v2/maps/sdk.js'
+               + '?appkey=' + encodeURIComponent(jsKey)
+               + '&libraries=services&autoload=false';
+
+    script.onload = function() {
+      kakao.maps.load(function() {
+        initApp();
+      });
+    };
+    script.onerror = function() {
+      UI.apiError.textContent = '로드 실패 — JS 키가 올바른지, 카카오 콘솔에서 도메인 [' + location.hostname + '] 이 등록됐는지 확인하세요.';
+      UI.btnLoadApi.disabled = false;
+      UI.btnLoadApi.textContent = '카카오맵 불러오기 →';
+    };
+    document.head.appendChild(script);
+  }
+
+  /* ══════════════════════════════════
+     앱 초기화
+  ══════════════════════════════════ */
+  function initApp() {
+    UI.apiScreen.classList.add('hidden');
+    UI.appDiv.classList.remove('hidden');
+    UI.btnLoadApi.disabled = false;
+    UI.btnLoadApi.textContent = '카카오맵 불러오기 →';
+
+    State.roadview = new kakao.maps.Roadview(document.getElementById('roadview'));
+    State.rvClient = new kakao.maps.RoadviewClient();
+
+    // position_changed: viewpoint 적용
+    kakao.maps.event.addListener(State.roadview, 'position_changed', function() {
+      if (State._pendingHeading !== null) {
+        State.roadview.setViewpoint({ pan: State._pendingHeading, tilt: -5, zoom: 0 });
+        State._pendingHeading = null;
+      }
+    });
+
+    // image_date_changed: 이미지 완전 로드 완료 신호
+    kakao.maps.event.addListener(State.roadview, 'image_date_changed', function() {
+      State._imageReady = true;
+    });
+
+    bindEvents();
+    setStatus('idle');
+  }
+
+  function bindEvents() {
+    UI.btnStart.addEventListener('click', onStart);
+    UI.btnPause.addEventListener('click', onPause);
+    UI.btnStop.addEventListener('click', onStop);
+    UI.speedSlider.addEventListener('input', function() {
+      var v = parseInt(this.value);
+      UI.speedVal.textContent = v;
+      State.intervalMs = Math.round(1300 - v * 120);
+      if (State.running && !State.paused) restartInterval();
+    });
+    UI.btnTogglePanel.addEventListener('click', function() {
+      setPanelCollapsed(!UI.panel.classList.contains('collapsed'));
+    });
+
+    // 진행 슬라이더 조작 → 해당 위치로 점프
+    UI.progressSlider.addEventListener('input', function() {
+      if (!State.drivePath.length) return;
+      var pct = parseInt(this.value);
+      var newIdx = Math.round((pct / 100) * (State.drivePath.length - 1));
+      State.stepIndex = newIdx;
+      _lastPanoId = null; // 강제로 새 파노 로드
+      setProgressUI(pct);
+      if (State.running && !State.paused) {
+        clearTimeout(State.timer);
+        moveStep();
+      } else if (State.running && State.paused) {
+        // 일시정지 중에도 위치 미리보기
+        moveStepOnce(newIdx);
+      }
+    });
+  }
+
+  function setPanelCollapsed(collapse) {
+    if (collapse) {
+      UI.panel.classList.add('collapsed');
+      UI.btnTogglePanel.textContent = '▼ 펼치기';
+    } else {
+      UI.panel.classList.remove('collapsed');
+      UI.btnTogglePanel.textContent = '▲ 숨기기';
+    }
+  }
+
+  /* ══════════════════════════════════
+     주행 시작
+  ══════════════════════════════════ */
+  function onStart() {
+    var orig = UI.originInput.value.trim();
+    var dest = UI.destInput.value.trim();
+    if (!orig || !dest) { showToast('출발지와 목적지를 입력하세요.'); return; }
+    clearDrive();
+    setStatus('loading');
+    UI.btnStart.disabled = true;
+
+    searchPlace(orig, function(oCoord) {
+      searchPlace(dest, function(dCoord) {
+        // 카카오 자동차 길찾기 API로 실제 도로 경로 요청
+        fetchCarRoute(oCoord, dCoord, function(route) {
+          buildFromKakaoRoute(route);
+          startDriving();
+        }, function(err) {
+          // API 실패 시 직선 보간으로 fallback
+          showToast('경로 API 실패, 직선으로 대체합니다: ' + (err||''));
+          buildLinear(oCoord, dCoord);
+          startDriving();
+        });
+      }, function(){ UI.btnStart.disabled=false; setStatus('idle'); showToast('목적지를 찾을 수 없습니다.'); });
+    }, function(){ UI.btnStart.disabled=false; setStatus('idle'); showToast('출발지를 찾을 수 없습니다.'); });
+  }
+
+  /* ══════════════════════════════════
+     카카오 자동차 길찾기 REST API
+  ══════════════════════════════════ */
+  function fetchCarRoute(origin, dest, ok, fail) {
+    var key = localStorage.getItem('kakao_rest_key') || '';
+    if (!key) { fail('REST API 키 없음 — 키 변경에서 REST 키를 입력하세요'); return; }
+    var url = 'https://apis-navi.kakaomobility.com/v1/directions'
+      + '?origin=' + origin.lng + ',' + origin.lat
+      + '&destination=' + dest.lng + ',' + dest.lat
+      + '&priority=RECOMMEND'
+      + '&car_type=1'
+      + '&summary=false';
+
+    fetch(url, {
+      headers: {
+        'Authorization': 'KakaoAK ' + key,
+        'Content-Type': 'application/json',
+      }
+    })
+    .then(function(r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    })
+    .then(function(data) {
+      if (!data.routes || !data.routes[0] || data.routes[0].result_code !== 0) {
+        throw new Error(data.routes && data.routes[0] ? data.routes[0].result_msg : 'no route');
+      }
+      ok(data.routes[0]);
+    })
+    .catch(function(e) { fail(e.message); });
+  }
+
+  /* ══════════════════════════════════
+     장소 검색
+  ══════════════════════════════════ */
+  function searchPlace(kw, ok, fail) {
+    var ps = new kakao.maps.services.Places();
+    ps.keywordSearch(kw, function(res, status) {
+      if (status === kakao.maps.services.Status.OK) {
+        ok({ lat: parseFloat(res[0].y), lng: parseFloat(res[0].x) });
+      } else {
+        var gc = new kakao.maps.services.Geocoder();
+        gc.addressSearch(kw, function(res2, status2) {
+          if (status2 === kakao.maps.services.Status.OK) {
+            ok({ lat: parseFloat(res2[0].y), lng: parseFloat(res2[0].x) });
+          } else { fail(); }
+        });
+      }
+    });
+  }
+
+  // fetchRoute 제거 — CORS 문제로 카카오 장소검색+직선보간 방식 사용
+
+  /* ══════════════════════════════════
+     카카오 경로 응답 → 좌표 배열 보간
+     vertexes = [lng0,lat0, lng1,lat1, ...]
+  ══════════════════════════════════ */
+  function buildFromKakaoRoute(route) {
+    var STEP = 20;
+    State.drivePath = [];
+    route.sections.forEach(function(sec) {
+      sec.roads.forEach(function(road) {
+        var v = road.vertexes;
+        for (var i = 0; i < v.length - 2; i += 2) {
+          var a = { lat: v[i+1], lng: v[i] };
+          var b = { lat: v[i+3], lng: v[i+2] };
+          pushInterp(a, b, STEP);
+        }
+      });
+    });
+    // 마지막 점
+    var lastSec  = route.sections[route.sections.length-1];
+    var lastRoad = lastSec.roads[lastSec.roads.length-1];
+    var lv = lastRoad.vertexes;
+    State.drivePath.push({ lat: lv[lv.length-1], lng: lv[lv.length-2] });
+  }
+
+  /* ══════════════════════════════════
+     직선 보간 (fallback)
+  ══════════════════════════════════ */
+  function buildLinear(a, b) {
+    State.drivePath = [];
+    pushInterp(a, b, 20);
+    State.drivePath.push({ lat: b.lat, lng: b.lng });
+  }
+
+  /* ══════════════════════════════════
+     두 점 사이 선형 보간 — 핵심 로직 ①
+     haversine 거리 → STEP_M 간격으로 쪼개기
+  ══════════════════════════════════ */
+  function pushInterp(a, b, stepM) {
+    var dist = haversine(a.lat, a.lng, b.lat, b.lng);
+    var segs = Math.max(1, Math.round(dist / stepM));
+    for (var s = 0; s < segs; s++) {
+      var t = s / segs;
+      State.drivePath.push({
+        lat: a.lat + (b.lat - a.lat) * t,
+        lng: a.lng + (b.lng - a.lng) * t,
+      });
+    }
+  }
+
+  function haversine(lat1, lng1, lat2, lng2) {
+    var R=6371000, p1=lat1*Math.PI/180, p2=lat2*Math.PI/180;
+    var dp=(lat2-lat1)*Math.PI/180, dl=(lng2-lng1)*Math.PI/180;
+    var a=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)*Math.sin(dl/2);
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  }
+
+  /* ══════════════════════════════════
+     방위각 계산 — 핵심 로직 ②
+     현재→다음 좌표의 진행 방향(°)
+  ══════════════════════════════════ */
+  function computeHeading(from, to) {
+    var dl=(to.lng-from.lng)*Math.PI/180;
+    var p1=from.lat*Math.PI/180, p2=to.lat*Math.PI/180;
+    var x=Math.sin(dl)*Math.cos(p2);
+    var y=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl);
+    return (Math.atan2(x,y)*180/Math.PI+360)%360;
+  }
+
+  var _curH = 0;
+  function smoothHeading(t) {
+    var d=((t-_curH+540)%360)-180;
+    _curH=(_curH+d*0.6+360)%360;
+    return _curH;
+  }
+
+  /* ══════════════════════════════════
+     주행 루프
+  ══════════════════════════════════ */
+  function startDriving() {
+    State.stepIndex=0; State.running=true; State.paused=false;
+    _lastPanoId = null; _lastPanoLatLng = null;
+    if (State.drivePath.length >= 2) {
+      var look = Math.min(4, State.drivePath.length - 1);
+      _curH = computeHeading(State.drivePath[0], State.drivePath[look]);
+    } else { _curH = 0; }
+    UI.emptyState.classList.add('hidden');
+    setPanelCollapsed(true); // 주행 시작 시 패널 자동 숨김
+    setStatus('driving');
+    UI.btnStart.disabled=false; UI.btnPause.disabled=false; UI.btnStop.disabled=false;
+    moveStep();
+  }
+
+  function restartInterval() {
+    // 타이머 방식 대신 콜백 체인 방식 사용 — 호환성 유지용
+  }
+
+  var _noRvT = null;
+  var _lastPanoId = null;   // 직전에 표시한 파노라마 ID (중복 방지)
+  var _lastPanoLatLng = null; // 직전 파노 실제 위치
+
+  function moveStep() {
+    if (!State.running || State.paused) return;
+    var path = State.drivePath, idx = State.stepIndex;
+    if (idx >= path.length) { onStop(); setStatus('arrived'); return; }
+
+    var curr = path[idx];
+
+    // heading: 현재~앞쪽 4스텝 기준
+    var lookIdx = Math.min(idx + 4, path.length - 1);
+    var rawHeading = computeHeading(curr, path[lookIdx]);
+    var heading = smoothHeading(rawHeading);
+
+    State.rvClient.getNearestPanoId(
+      new kakao.maps.LatLng(curr.lat, curr.lng),
+      500,
+      function(panoId) {
+        if (panoId) {
+          UI.emptyState.classList.add('hidden');
+          var isDuplicate = (panoId === _lastPanoId);
+
+          if (isDuplicate) {
+            // ── 같은 파노라마: 표시 생략, 경로를 더 앞으로 건너뜀 ──
+            State.stepIndex = advancePastPano(idx, path);
+          } else {
+            // ── 새 파노라마: 로드 완료(image_date_changed) 후 다음 스텝 ──
+            State._imageReady = false;
+            State._pendingHeading = heading;
+            var latlng = new kakao.maps.LatLng(curr.lat, curr.lng);
+            State.roadview.setPanoId(panoId, latlng);
+
+            _lastPanoId = panoId;
+            _lastPanoLatLng = curr;
+            UI.noRoadview.classList.remove('show');
+            clearTimeout(_noRvT);
+
+            State.stepIndex = idx + 1;
+          }
+
+          updateProgress();
+          if (State.running && !State.paused) {
+            if (isDuplicate) {
+              State.timer = setTimeout(moveStep, 0);
+            } else {
+              // 이미지 완전 로드(image_date_changed) 대기 후 intervalMs 후 다음 스텝
+              waitForImageThenNext();
+            }
+          }
+        } else {
+          // 로드뷰 없는 구간 — 조용히 스킵
+          UI.noRoadview.classList.remove('show');
+          State.stepIndex = idx + 1;
+          updateProgress();
+          if (State.running && !State.paused) {
+            State.timer = setTimeout(moveStep, 0);
+          }
+        }
+      }
+    );
+  }
+
+  /* 직전 파노 위치에서 MIN_ADVANCE_M 이상 떨어진 경로 인덱스로 전진 */
+  var MIN_ADVANCE_M = 15;
+  function advancePastPano(idx, path) {
+    if (!_lastPanoLatLng) return idx + 1;
+    var next = idx + 1;
+    while (next < path.length) {
+      var d = haversine(_lastPanoLatLng.lat, _lastPanoLatLng.lng, path[next].lat, path[next].lng);
+      if (d >= MIN_ADVANCE_M) break;
+      next++;
+    }
+    return next;
+  }
+
+  /* 이미지 로드 완료 대기 후 다음 스텝 — 최대 1.5초 대기 */
+  function waitForImageThenNext() {
+    var waited = 0;
+    var interval = 50;
+    var maxWait = 1500;
+    clearTimeout(State.timer);
+    (function poll() {
+      if (!State.running || State.paused) return;
+      if (State._imageReady || waited >= maxWait) {
+        State.timer = setTimeout(moveStep, State.intervalMs);
+      } else {
+        waited += interval;
+        State.timer = setTimeout(poll, interval);
+      }
+    })();
+  }
+
+  function onPause() {
+    if (!State.running) return;
+    State.paused = !State.paused;
+    if (State.paused) { clearTimeout(State.timer); setStatus('paused'); UI.btnPause.textContent='▶ 재개'; }
+    else { setStatus('driving'); UI.btnPause.textContent='⏸ 일시정지'; moveStep(); }
+  }
+  function onStop() { clearDrive(); setStatus('idle'); UI.btnPause.textContent='⏸ 일시정지'; }
+  function clearDrive() {
+    clearTimeout(State.timer);
+    State.running=false; State.paused=false; State.drivePath=[]; State.stepIndex=0;
+    UI.emptyState.classList.remove('hidden');
+    UI.btnPause.disabled=true; UI.btnStop.disabled=true;
+    setPanelCollapsed(false); // 정지 시 패널 자동 펼침
+    updateProgress();
+  }
+
+  function setStatus(type) {
+    UI.statusDot.className='status-dot';
+    if (type==='idle')    UI.statusText.textContent='대기 중';
+    else if (type==='loading') UI.statusText.textContent='경로 계산 중…';
+    else if (type==='driving') { UI.statusText.textContent='주행 중'; UI.statusDot.classList.add('active'); }
+    else if (type==='paused')  { UI.statusText.textContent='일시 정지'; UI.statusDot.classList.add('paused'); }
+    else if (type==='arrived') UI.statusText.textContent='목적지 도착! 🎉';
+  }
+  function setProgressUI(pct) {
+    pct = Math.max(0, Math.min(100, pct));
+    UI.progressFill.style.width  = pct + '%';
+    UI.progressCar.style.left    = pct + '%';
+    UI.progressPct.textContent   = pct + '%';
+    UI.progressSlider.value      = pct;
+    UI.progressWrap.textContent  = pct + '%'; // 상태바 텍스트도 동기화
+  }
+  function updateProgress() {
+    var t = State.drivePath.length, c = State.stepIndex;
+    var pct = t === 0 ? 0 : Math.min(100, Math.round(c / t * 100));
+    setProgressUI(pct);
+  }
+
+  // 일시정지 중 슬라이더 조작 시 해당 위치 파노만 한 번 표시
+  function moveStepOnce(idx) {
+    var path = State.drivePath;
+    if (!path.length || idx >= path.length) return;
+    var curr = path[idx];
+    var lookIdx = Math.min(idx + 4, path.length - 1);
+    var heading = computeHeading(curr, path[lookIdx]);
+    State.rvClient.getNearestPanoId(
+      new kakao.maps.LatLng(curr.lat, curr.lng), 500,
+      function(panoId) {
+        if (panoId) {
+          State._pendingHeading = heading;
+          State.roadview.setPanoId(panoId, new kakao.maps.LatLng(curr.lat, curr.lng));
+          _lastPanoId = panoId;
+          _lastPanoLatLng = curr;
+        }
+      }
+    );
+  }
+  var _tt=null;
+  function showToast(msg) {
+    UI.toast.textContent=msg; UI.toast.classList.add('show');
+    clearTimeout(_tt); _tt=setTimeout(function(){ UI.toast.classList.remove('show'); },3500);
+  }
+
+})();
+</script>
+</body>
+</html>
